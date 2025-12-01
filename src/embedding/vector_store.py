@@ -5,6 +5,8 @@ class VectorStore:
     """向量数据库封装（ChromaDB）"""
 
     def __init__(self, db_path: str = "./data/vectordb"):
+        # 开发阶段使用本地文件持久化。
+        # 如果后续切换到 Docker Chroma HTTP 服务，可在此替换为 HttpClient。
         self.client = chromadb.PersistentClient(path=db_path)
         self.collection = None
 
@@ -15,8 +17,13 @@ class VectorStore:
             metadata={"hnsw:space": "cosine"}
         )
 
-    def add_documents(self, ids: list[str], embeddings: list[list[float]], 
-                      documents: list[str], metadatas: list[dict] = None):
+    def add_documents(
+        self,
+        ids: list[str],
+        embeddings: list[list[float]],
+        documents: list[str],
+        metadatas: list[dict] | None = None,
+    ):
         """添加文档到向量库"""
         if not self.collection:
             raise ValueError("Collection not initialized. Call create_collection first.")
@@ -28,14 +35,20 @@ class VectorStore:
             metadatas=metadatas or []
         )
 
-    def search(self, query_embedding: list[float], top_k: int = 5) -> dict:
-        """检索相似文档"""
+    def search(
+        self,
+        query_embedding: list[float],
+        top_k: int = 5,
+        where: dict | None = None,
+    ) -> dict:
+        """检索相似文档，可选 where 过滤"""
         if not self.collection:
             raise ValueError("Collection not initialized.")
         
         results = self.collection.query(
             query_embeddings=[query_embedding],
-            n_results=top_k
+            n_results=top_k,
+            where=where or {},
         )
         return results
 

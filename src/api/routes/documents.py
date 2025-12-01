@@ -1,21 +1,20 @@
 from fastapi import APIRouter, HTTPException, Depends
+from sqlmodel import select
 from ..models import DocumentUploadRequest, DocumentResponse
-from ...embedding.chunker import DocumentChunker
-from ...embedding.embedder import TextEmbedder
-from ...embedding.vector_store import VectorStore
-import hashlib
-import uuid
+from ...db.session import get_session
+from ...services.document_service import (
+    create_document_with_chunks,
+    list_documents_for_api,
+)
+from ...services.runtime_service import build_document_components
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
-# 依赖注入占位
+
 def get_services():
-    """获取服务实例（实际应该从容器注入）"""
-    return {
-        "chunker": DocumentChunker(),
-        "embedder": TextEmbedder(),
-        "vector_store": VectorStore()
-    }
+    """获取服务实例"""
+    components = build_document_components()
+    return components
 
 
 @router.post("/upload", response_model=DocumentResponse)
@@ -25,50 +24,31 @@ async def upload_document(
 ):
     """上传并处理文档"""
     try:
-        doc_id = str(uuid.uuid4())
-        
-        # 获取文本内容
-        if req.source_type == "text":
-            text = req.content
-        elif req.source_type == "url":
-            # TODO: 实现 URL 加载逻辑
-            text = req.content
-        else:
-            raise ValueError(f"Unsupported source type: {req.source_type}")
-        
-        # 分块
-        chunker = services["chunker"]
-        chunks = chunker.chunk(text)
-        
-        # 向量化
-        embedder = services["embedder"]
-        embeddings = embedder.embed_batch(chunks)
-        
-        # 存储
-        vector_store = services["vector_store"]
-        vector_store.create_collection("documents")
-        
-        chunk_ids = [f"{doc_id}_{i}" for i in range(len(chunks))]
-        vector_store.add_documents(
-            ids=chunk_ids,
-            embeddings=embeddings,
-            documents=chunks,
-            metadatas=[{"source_id": doc_id, "name": req.name} for _ in chunks]
-        )
-        vector_store.persist()
-        
-        return DocumentResponse(
-            document_id=doc_id,
-            name=req.name,
-            chunks_count=len(chunks),
-            message="Document uploaded and processed successfully"
-        )
+        with get_session() as db:
+            doc, chunk_count = create_document_with_chunks(
+                db=db,
+                name=req.name,
+                source_type=req.source_type,
+                source_content=req.content,
+                chunker=services["chunker"],
+                embedder=services["embedder"],
+                vector_store=services["vector_store"],
+            )
+
+            return DocumentResponse(
+                document_id=doc.document_uid,
+                name=req.name,
+                chunks_count=chunk_count,
+                message="Document uploaded and processed successfully",
+            )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/list")
 async def list_documents():
-    """列出所有文档（占位实现）"""
-    return {"documents": []}
+    """列出所有文档（PostgreSQL）"""
+    with get_session() as db:
+        items = list_documents_for_api(db)
+        return {"documents": items}
 

@@ -11,6 +11,6 @@ class AgentState(TypedDict):
     tool_results: dict[str, Any]         # 工具执行结果
     iteration_count: int                  # 当前迭代次数
     final_answer: Optional[str]          # 最终答案
-    session_id: str                       # 会话 ID
-    document_id: str                      # 当前文档 ID
+    conversation_uid: str                 # 会话唯一标识
+    document_uid: str                     # 当前文档唯一标识
 

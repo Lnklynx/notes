@@ -13,14 +13,23 @@ class VectorSearchTool(Tool):
         self.vector_store = vector_store
         self.embedder = embedder
 
-    def execute(self, query: str, top_k: int = 5) -> dict:
-        """执行检索"""
+    def execute(
+        self,
+        query: str,
+        top_k: int = 5,
+        document_uid: str | None = None,
+    ) -> dict:
+        """执行检索，可选按文档过滤"""
         query_embedding = self.embedder.embed_text(query)
-        results = self.vector_store.search(query_embedding, top_k=top_k)
-        
+
+        where = {"document_uid": document_uid} if document_uid else None
+        results = self.vector_store.search(
+            query_embedding, top_k=top_k, where=where
+        )
+
         return {
             "documents": results.get("documents", [[]]),
             "distances": results.get("distances", [[]]),
-            "metadatas": results.get("metadatas", [[]])
+            "metadatas": results.get("metadatas", [[]]),
         }
 

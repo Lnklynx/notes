@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     max_iterations: int = 10
     temperature: float = 0.7
 
+    # 数据库配置
+    database_url: str = "postgresql://postgres:postgres@localhost:5432/notes"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

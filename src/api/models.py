@@ -19,16 +19,16 @@ class DocumentResponse(BaseModel):
 
 class ChatRequest(BaseModel):
     """对话请求"""
-    session_id: str = Field(..., description="会话ID")
-    document_id: str = Field(..., description="文档ID")
+    conversation_uid: str = Field(..., description="会话唯一标识")
+    document_uid: str = Field(..., description="文档唯一标识")
     message: str = Field(..., description="用户问题")
     stream: bool = Field(default=False, description="是否流式返回")
 
 
 class ChatResponse(BaseModel):
     """对话响应"""
-    session_id: str
-    document_id: str
+    conversation_uid: str
+    document_uid: str
     user_message: str
     answer: str
     documents: list[str] = Field(default_factory=list, description="参考文档片段")
@@ -36,7 +36,7 @@ class ChatResponse(BaseModel):
 
 class HistoryResponse(BaseModel):
     """对话历史"""
-    session_id: str
+    conversation_uid: str
     messages: list[dict]
 
 

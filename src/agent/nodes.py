@@ -37,13 +37,20 @@ def search_node(state: AgentState, tool_registry: ToolRegistry, top_k: int = 5) 
     last_message = state["messages"][-1].content if state["messages"] else ""
     search_tool = tool_registry.get("vector_search")
 
-    results = search_tool.execute(query=last_message, top_k=top_k)
+    # 按当前对话绑定的文档进行过滤检索
+    document_uid = state.get("document_uid")
+
+    results = search_tool.execute(
+        query=last_message,
+        top_k=top_k,
+        document_uid=document_uid,
+    )
 
     documents = results.get("documents", [[]])[0]
 
     return {
         "documents": documents,
-        "tool_results": {"search_results": results}
+        "tool_results": {"search_results": results},
     }
 
 

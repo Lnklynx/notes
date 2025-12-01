@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .routes import documents, chat, health
 from ..config import get_settings
+from ..db.session import init_db
 
 settings = get_settings()
 
@@ -29,6 +30,11 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(documents.router, prefix="/api")
     app.include_router(chat.router, prefix="/api")
+
+    @app.on_event("startup")
+    def _on_startup() -> None:
+        # 开发阶段：应用启动时自动创建缺失的数据表
+        init_db()
     
     return app
 
