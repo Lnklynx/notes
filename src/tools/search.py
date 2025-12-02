@@ -37,23 +37,45 @@ class VectorSearchTool(Tool):
 
     def execute(
         self,
-        query: str,
+        query: str | None = None,
         top_k: int = 5,
         document_uid: str | None = None,
     ) -> dict:
         """执行检索，可选按文档过滤"""
-        logger.info(f"[VectorSearchTool] 开始检索 | query: {query[:100]}... | top_k: {top_k} | document_uid: {document_uid}")
+        # 处理 query 缺失或空的情况
+        query = query.strip() if query else ""
+        has_query = bool(query)
         
-        query_embedding = self.embedder.embed_text(query)
-        logger.debug(f"[VectorSearchTool] 向量化完成 | 维度: {len(query_embedding)}")
-
         where = {"document_uid": document_uid} if document_uid else None
-        if where:
-            logger.info(f"[VectorSearchTool] 使用文档过滤: {where}")
         
-        results = self.vector_store.search(
-            query_embedding, top_k=top_k, where=where
-        )
+        logger.info(f"[VectorSearchTool] 开始检索 | query: {query[:100] if has_query else '(empty)'}... | top_k: {top_k} | document_uid: {document_uid}")
+
+        # 如果 query 为空，使用元数据查询而不是向量检索
+        if not has_query:
+            if not where:
+                logger.warning("[VectorSearchTool] query 为空且未指定 document_uid，无法进行查询")
+                return {
+                    "documents": [[]],
+                    "distances": [[]],
+                    "metadatas": [[]],
+                }
+            
+            logger.info(f"[VectorSearchTool] query 为空，使用元数据查询 | where: {where}")
+            results = self.vector_store.search_by_metadata(
+                top_k=top_k,
+                where=where,
+            )
+        else:
+            # 正常的向量检索
+            query_embedding = self.embedder.embed_text(query)
+            logger.debug(f"[VectorSearchTool] 向量化完成 | 维度: {len(query_embedding)}")
+
+            if where:
+                logger.info(f"[VectorSearchTool] 使用文档过滤: {where}")
+            
+            results = self.vector_store.search(
+                query_embedding, top_k=top_k, where=where
+            )
 
         doc_list = results.get("documents", [[]])
         doc_count = len(doc_list[0]) if doc_list and doc_list[0] else 0
@@ -63,7 +85,10 @@ class VectorSearchTool(Tool):
         if doc_count > 0 and distances and distances[0]:
             logger.debug(f"[VectorSearchTool] 相似度范围: {min(distances[0]):.4f} ~ {max(distances[0]):.4f}")
         elif doc_count == 0:
-            logger.warning(f"[VectorSearchTool] ⚠️ 检索结果为空！可能原因：1) Chroma 集合为空 2) where 过滤后无匹配 3) 查询向量与现有向量差异过大")
+            if has_query:
+                logger.warning(f"[VectorSearchTool] ⚠️ 检索结果为空！可能原因：1) Chroma 集合为空 2) where 过滤后无匹配 3) 查询向量与现有向量差异过大")
+            else:
+                logger.warning(f"[VectorSearchTool] ⚠️ 元数据查询结果为空！可能原因：1) Chroma 集合为空 2) where 条件无匹配")
 
         return {
             "documents": doc_list,
