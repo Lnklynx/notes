@@ -44,4 +44,3 @@ class ErrorResponse(BaseModel):
     """错误响应"""
     error: str
     detail: Optional[str] = None
-

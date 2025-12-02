@@ -5,8 +5,12 @@ from ..llm.base import BaseLLM
 from ..tools.base import ToolRegistry
 
 
-def create_agent_graph(llm: BaseLLM, tool_registry: ToolRegistry,
-                       tools_info: list[dict], max_iterations: int = 10):
+def create_agent_graph(
+        llm_think: BaseLLM,
+        llm_synthesize: BaseLLM,
+        tool_registry: ToolRegistry,
+        max_iterations: int = 10,
+):
     """创建 ReAct Agent 图"""
 
     graph = StateGraph(AgentState)
@@ -14,20 +18,17 @@ def create_agent_graph(llm: BaseLLM, tool_registry: ToolRegistry,
     # 注册节点
     graph.add_node(
         "think",
-        lambda state: think_node(state, llm, tools_info)
+        lambda state: think_node(state, llm_think, tool_registry),
     )
     graph.add_node(
         "search",
-        lambda state: search_node(state, tool_registry)
+        lambda state: search_node(state, tool_registry),
     )
     graph.add_node(
         "synthesize",
-        lambda state: synthesize_node(state, llm)
+        lambda state: synthesize_node(state, llm_synthesize),
     )
-    graph.add_node(
-        "judge",
-        lambda state: judge_node(state, max_iterations)
-    )
+    graph.add_node("judge", lambda state: judge_node(state, max_iterations))
 
     # 定义边（转移条件）
     graph.set_entry_point("think")
@@ -46,4 +47,4 @@ def create_agent_graph(llm: BaseLLM, tool_registry: ToolRegistry,
 
     graph.add_edge("synthesize", END)
 
-    return graph.compile()
+    return graph

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 from uuid import uuid4
 
-from sqlmodel import SQLModel, Field
+from sqlalchemy import Column
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlmodel import Field, SQLModel
 
 
 class SQLModelBase(SQLModel):
@@ -18,8 +20,14 @@ class SQLModelBase(SQLModel):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     is_deleted: bool = Field(default=False, index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="记录创建时间（UTC，带时区）",
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="记录更新时间（UTC，带时区）",
+    )
 
     class Config:
         arbitrary_types_allowed = True
@@ -27,6 +35,8 @@ class SQLModelBase(SQLModel):
 
 class User(SQLModelBase, table=True):
     """用户（预留，当前可选用）"""
+
+    __tablename__ = "notes_user"
 
     # 对外暴露的稳定标识
     user_uid: str = Field(
@@ -37,6 +47,8 @@ class User(SQLModelBase, table=True):
 
 class Conversation(SQLModelBase, table=True):
     """会话"""
+
+    __tablename__ = "notes_conversation"
 
     conversation_uid: str = Field(
         default_factory=lambda: uuid4().hex, index=True, unique=True
@@ -49,21 +61,25 @@ class Conversation(SQLModelBase, table=True):
 class Message(SQLModelBase, table=True):
     """消息"""
 
+    __tablename__ = "notes_message"
+
     message_uid: str = Field(
         default_factory=lambda: uuid4().hex, index=True, unique=True
     )
     conversation_id: int = Field(index=True)
     role: str = Field(max_length=20)  # user / assistant / system
     content: str
-    extra: Optional[dict] = Field(
+    extra: Optional[Dict[str, Any]] = Field(
         default=None,
-        sa_column_kwargs={"nullable": True},
-        description="附加信息（JSON），避免使用 metadata 字段名与 SQLModel 冲突",
+        sa_column=Column(JSONB, nullable=True),
+        description="附加信息（JSONB），避免使用 metadata 字段名与 SQLModel 冲突",
     )
 
 
 class Document(SQLModelBase, table=True):
     """文档元数据"""
+
+    __tablename__ = "notes_document"
 
     document_uid: str = Field(
         default_factory=lambda: uuid4().hex, index=True, unique=True
@@ -79,6 +95,8 @@ class Document(SQLModelBase, table=True):
 class DocumentChunk(SQLModelBase, table=True):
     """文档分块"""
 
+    __tablename__ = "notes_document_chunk"
+
     chunk_uid: str = Field(
         default_factory=lambda: uuid4().hex, index=True, unique=True
     )
@@ -86,17 +104,21 @@ class DocumentChunk(SQLModelBase, table=True):
     chunk_index: int = Field(index=True)
     content: str
     embedding_id: Optional[str] = Field(
-        default=None, index=True, description="在向量库中的主键，可选"
-    )
-    extra: Optional[dict] = Field(
         default=None,
-        sa_column_kwargs={"nullable": True},
-        description="分块附加元信息（JSON），如页码、标题等",
+        index=True,
+        description="在向量库中的主键，可选",
+    )
+    extra: Optional[Dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(JSONB, nullable=True),
+        description="分块附加元信息（JSONB），如页码、标题等",
     )
 
 
 class Memory(SQLModelBase, table=True):
     """长期记忆"""
+
+    __tablename__ = "notes_memory"
 
     memory_uid: str = Field(
         default_factory=lambda: uuid4().hex, index=True, unique=True
@@ -106,3 +128,31 @@ class Memory(SQLModelBase, table=True):
     memory_type: str = Field(max_length=50)  # preference / summary / fact / profile
     content: str
     score: float = Field(default=0.5)
+
+
+class ExecutionRecord(SQLModel, table=True):
+    """每次对话的执行链路记录，包含多个步骤"""
+
+    __tablename__ = "notes_execution_record"
+
+    record_uid: str = Field(
+        default_factory=lambda: uuid4().hex, primary_key=True, description="记录唯一ID"
+    )
+    conversation_uid: str = Field(
+        foreign_key="notes_conversation.conversation_uid",
+        index=True,
+        description="关联的对话ID",
+    )
+    node_name: str = Field(description="执行的节点名称 (e.g., 'think', 'search')")
+    iteration_count: int = Field(description="在当前对话中的迭代轮次")
+    status: str = Field(default="success", description="执行状态 ('success', 'error')")
+    execution_time_ms: int = Field(description="执行耗时（毫秒）")
+    llm_input: Optional[dict] = Field(default=None, sa_column=Column(JSONB))
+    llm_output: Optional[dict] = Field(default=None, sa_column=Column(JSONB))
+    tool_input: Optional[dict] = Field(default=None, sa_column=Column(JSONB))
+    tool_output: Optional[dict] = Field(default=None, sa_column=Column(JSONB))
+    error_info: Optional[dict] = Field(default=None, sa_column=Column(JSONB))
+
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), description="创建时间"
+    )

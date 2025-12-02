@@ -1,7 +1,7 @@
-from typing import Iterator
+from typing import Iterator, Optional
 import httpx
 import json
-from .base import BaseLLM
+from .base import BaseLLM, LLMResponse, ToolCall, LLMRequest
 
 
 class OllamaLLM(BaseLLM):
@@ -12,29 +12,63 @@ class OllamaLLM(BaseLLM):
         self.model = model
         self.client = httpx.Client(base_url=base_url, timeout=300.0)
 
-    def chat(self, messages: list[dict]) -> str:
+    def chat(self, request: LLMRequest) -> LLMResponse:
         """同步调用 Ollama API"""
         try:
-            # 转换 LangChain 消息格式为 Ollama 格式
-            formatted_messages = self._format_messages(messages)
-            response = self.client.post(
-                "/api/chat",
-                json={"model": self.model, "messages": formatted_messages, "stream": False}
-            )
+            formatted_messages = self._format_messages(request.messages)
+            
+            payload = {
+                "model": self.model,
+                "messages": formatted_messages,
+                "temperature": request.temperature,
+                "stream": False
+            }
+            
+            if request.tools:
+                payload["tools"] = request.tools
+                payload["tool_choice"] = "auto"
+            
+            payload.update(request.extra_params)
+            
+            response = self.client.post("/api/chat", json=payload)
             response.raise_for_status()
-            return response.json()["message"]["content"]
+            result = response.json()
+            
+            content = result["message"].get("content", "")
+            tool_calls = []
+            
+            if "tool_calls" in result["message"]:
+                for tc in result["message"]["tool_calls"]:
+                    try:
+                        arguments = tc.get("function", {}).get("arguments", {})
+                        if isinstance(arguments, str):
+                            arguments = json.loads(arguments)
+                        tool_calls.append(ToolCall(
+                            name=tc.get("function", {}).get("name", ""),
+                            arguments=arguments,
+                            id=tc.get("id")
+                        ))
+                    except Exception:
+                        continue
+            
+            return LLMResponse(content=content, tool_calls=tool_calls)
         except Exception as e:
             raise RuntimeError(f"Ollama API error: {str(e)}")
 
-    def stream(self, messages: list[dict]) -> Iterator[str]:
-        """流式调用 Ollama API"""
+    def stream(self, request: LLMRequest) -> Iterator[str]:
+        """流式调用 Ollama API（暂不支持工具调用）"""
         try:
-            formatted_messages = self._format_messages(messages)
-            with self.client.stream(
-                    "POST",
-                    "/api/chat",
-                    json={"model": self.model, "messages": formatted_messages, "stream": True}
-            ) as response:
+            formatted_messages = self._format_messages(request.messages)
+            payload = {
+                "model": self.model,
+                "messages": formatted_messages,
+                "temperature": request.temperature,
+                "stream": True
+            }
+            
+            payload.update(request.extra_params)
+            
+            with self.client.stream("POST", "/api/chat", json=payload) as response:
                 response.raise_for_status()
                 for line in response.iter_lines():
                     if line:

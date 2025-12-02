@@ -1,21 +1,29 @@
 import chromadb
+from ..utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class VectorStore:
-    """向量数据库封装（ChromaDB）"""
+    """向量数据库封装（ChromaDB）
 
-    def __init__(self, db_path: str = "./data/vectordb"):
-        # 开发阶段使用本地文件持久化。
-        # 如果后续切换到 Docker Chroma HTTP 服务，可在此替换为 HttpClient。
-        self.client = chromadb.PersistentClient(path=db_path)
+    当前使用 Docker 部署的 Chroma HTTP 服务，而不是本地文件持久化。
+    """
+
+    def __init__(self, host: str = "localhost", port: int = 8000):
+        # 通过 HTTP 客户端连接 Chroma 服务
+        self.client = chromadb.HttpClient(host=host, port=port)
         self.collection = None
 
     def create_collection(self, collection_name: str):
         """创建或获取集合"""
+        logger.info(f"[VectorStore] 创建/获取集合: {collection_name}")
         self.collection = self.client.get_or_create_collection(
             name=collection_name,
             metadata={"hnsw:space": "cosine"}
         )
+        count = self.collection.count() if self.collection else 0
+        logger.info(f"[VectorStore] 集合 '{collection_name}' 当前包含 {count} 个向量")
 
     def add_documents(
         self,
@@ -45,12 +53,22 @@ class VectorStore:
         if not self.collection:
             raise ValueError("Collection not initialized.")
         
-        results = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-            where=where or {},
-        )
-        return results
+        logger.debug(f"[VectorStore] 执行向量检索 | top_k: {top_k} | where: {where}")
+        
+        try:
+            results = self.collection.query(
+                query_embeddings=[query_embedding],
+                n_results=top_k,
+                where=where or {},
+            )
+            
+            doc_count = len(results.get("documents", [[]])[0]) if results.get("documents") else 0
+            logger.info(f"[VectorStore] 检索完成 | 返回 {doc_count} 个结果")
+            
+            return results
+        except Exception as e:
+            logger.error(f"[VectorStore] 检索失败: {e}")
+            raise
 
     def delete_by_source(self, source_id: str):
         """删除某个来源的所有文档"""

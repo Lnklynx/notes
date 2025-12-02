@@ -1,6 +1,7 @@
-from typing import Iterator
+from typing import Iterator, Optional
 from openai import OpenAI
-from .base import BaseLLM
+import json
+from .base import BaseLLM, LLMResponse, ToolCall, LLMRequest
 
 
 class OpenAILLM(BaseLLM):
@@ -10,23 +11,78 @@ class OpenAILLM(BaseLLM):
         self.client = OpenAI(api_key=api_key)
         self.model = model
 
-    def chat(self, messages: list[dict]) -> str:
-        formatted_messages = self._format_messages(messages)
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=formatted_messages,
-            temperature=0.7
-        )
-        return response.choices[0].message.content
+    def chat(self, request: LLMRequest) -> LLMResponse:
+        formatted_messages = self._format_messages(request.messages)
+        
+        kwargs = {
+            "model": self.model,
+            "messages": formatted_messages,
+            "temperature": request.temperature
+        }
+        
+        if request.tools:
+            kwargs["tools"] = request.tools
+            kwargs["tool_choice"] = "auto"
+        if request.max_tokens:
+            kwargs["max_tokens"] = request.max_tokens
+        if request.top_p:
+            kwargs["top_p"] = request.top_p
+        if request.frequency_penalty:
+            kwargs["frequency_penalty"] = request.frequency_penalty
+        if request.presence_penalty:
+            kwargs["presence_penalty"] = request.presence_penalty
+        if request.stop:
+            kwargs["stop"] = request.stop
+        
+        kwargs.update(request.extra_params)
+        
+        response = self.client.chat.completions.create(**kwargs)
+        
+        message = response.choices[0].message
+        content = message.content or ""
+        tool_calls = []
+        
+        if message.tool_calls:
+            for tc in message.tool_calls:
+                try:
+                    arguments = json.loads(tc.function.arguments) if isinstance(tc.function.arguments, str) else tc.function.arguments
+                    tool_calls.append(ToolCall(
+                        name=tc.function.name,
+                        arguments=arguments,
+                        id=tc.id
+                    ))
+                except Exception:
+                    continue
+        
+        return LLMResponse(content=content, tool_calls=tool_calls)
 
-    def stream(self, messages: list[dict]) -> Iterator[str]:
-        formatted_messages = self._format_messages(messages)
-        with self.client.chat.completions.create(
-            model=self.model,
-            messages=formatted_messages,
-            temperature=0.7,
-            stream=True
-        ) as stream:
+    def stream(self, request: LLMRequest) -> Iterator[str]:
+        formatted_messages = self._format_messages(request.messages)
+        
+        kwargs = {
+            "model": self.model,
+            "messages": formatted_messages,
+            "temperature": request.temperature,
+            "stream": True
+        }
+        
+        if request.tools:
+            kwargs["tools"] = request.tools
+            kwargs["tool_choice"] = "auto"
+        if request.max_tokens:
+            kwargs["max_tokens"] = request.max_tokens
+        if request.top_p:
+            kwargs["top_p"] = request.top_p
+        if request.frequency_penalty:
+            kwargs["frequency_penalty"] = request.frequency_penalty
+        if request.presence_penalty:
+            kwargs["presence_penalty"] = request.presence_penalty
+        if request.stop:
+            kwargs["stop"] = request.stop
+        
+        kwargs.update(request.extra_params)
+        
+        with self.client.chat.completions.create(**kwargs) as stream:
             for chunk in stream:
                 if chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content

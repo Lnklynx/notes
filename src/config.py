@@ -21,9 +21,12 @@ class Settings(BaseSettings):
     # 向量数据库
     vector_store_type: str = "chromadb"
     vector_db_path: str = "./data/vectordb"
+    chroma_host: str = "localhost"
+    chroma_port: int = 8000
 
     # Embedding
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    embedding_model_dir: str | None = None
 
     # 向量化参数
     chunk_size: int = 1000
@@ -35,7 +38,7 @@ class Settings(BaseSettings):
     temperature: float = 0.7
 
     # 数据库配置
-    database_url: str = "postgresql://postgres:postgres@localhost:5432/notes"
+    database_url: str = "postgresql://postgres:admin123@localhost:5432/notes"
 
     class Config:
         env_file = ".env"

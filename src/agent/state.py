@@ -1,8 +1,8 @@
-from typing import TypedDict, Optional, Any
+from typing import TypedDict, Optional, Any, Callable
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
 
-class AgentState(TypedDict):
+class AgentState(TypedDict, total=False):
     """Agent 状态定义 - LangGraph 状态结构"""
     
     messages: list[BaseMessage]           # 对话历史

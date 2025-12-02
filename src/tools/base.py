@@ -7,11 +7,23 @@ class Tool(ABC):
 
     name: str
     description: str
+    parameters: dict  # 工具参数定义（JSON Schema 格式）
 
     @abstractmethod
     def execute(self, **kwargs) -> Any:
         """执行工具"""
         pass
+
+    def to_schema(self) -> dict:
+        """生成符合 OpenAI Function Calling 格式的工具定义"""
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": self.parameters,
+            },
+        }
 
 
 class ToolRegistry:
@@ -37,3 +49,11 @@ class ToolRegistry:
             for tool in self.tools.values()
         ]
 
+    def invoke_tool(self, name: str, **kwargs) -> Any:
+        """获取并执行指定的工具"""
+        tool = self.get(name)
+        return tool.execute(**kwargs)
+
+    def get_tool_schemas(self) -> list[dict]:
+        """获取所有工具的标准定义 Schema（用于 LLM 工具调用）"""
+        return [tool.to_schema() for tool in self.tools.values()]

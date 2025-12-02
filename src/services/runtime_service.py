@@ -1,67 +1,62 @@
 from __future__ import annotations
 
-from typing import TypedDict
-
-from ..config import get_settings, Settings
-from ..llm.factory import create_llm
+from sqlmodel import Session as DbSession
+from ..agent.factory import AuditableGraphFactory
+from ..agent.state import AgentState
+from ..config import Settings
 from ..llm.base import BaseLLM
-from ..embedding.embedder import TextEmbedder
-from ..embedding.vector_store import VectorStore
-from ..embedding.chunker import DocumentChunker
+from ..tools.base import ToolRegistry
+from ..utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
-class LLMComponents(TypedDict):
-    llm: BaseLLM
-    embedder: TextEmbedder
-    vector_store: VectorStore
+class AgentRuntimeService:
+    """
+    一个封装和执行 Agent 核心逻辑的服务。
+    它负责管理 Agent Graph 的生命周期，处理状态流转，
+    并且是无状态和通用的。
+    """
 
+    def __init__(self, llm: BaseLLM, settings: Settings):
+        self._llm = llm
+        self._settings = settings
 
-class DocumentComponents(TypedDict):
-    chunker: DocumentChunker
-    embedder: TextEmbedder
-    vector_store: VectorStore
+    def run(
+            self, state: AgentState, tool_registry: ToolRegistry, db: DbSession
+    ) -> AgentState:
+        """
+        执行一个通用的 Agent 流程。
 
+        它接收所有必要的上下文（状态、工具），执行图，并返回最终状态。
 
-def build_llm_components(settings: Settings | None = None) -> LLMComponents:
-    """构建 LLM 相关组件（LLM + Embedding + VectorStore）"""
-    settings = settings or get_settings()
+        Args:
+            state: Agent 的初始状态。
+            tool_registry: 为此次运行提供的工具注册表。
+            db: 数据库会话，用于审计记录。
 
-    provider = settings.llm_provider.lower()
-    api_key = ""
-    if provider == "openai":
-        api_key = settings.openai_api_key
-    elif provider == "qwen":
-        api_key = settings.qwen_api_key
+        Returns:
+            Agent 执行完成后的最终状态。
+        """
+        logger.info(
+            f"[AgentRuntime] 开始执行 Agent | conversation_uid: {state.get('conversation_uid')}"
+        )
 
-    llm = create_llm(
-        provider,
-        api_key=api_key,
-        model=settings.llm_model,
-        base_url=settings.ollama_base_url,
-    )
-    embedder = TextEmbedder(settings.embedding_model)
-    vector_store = VectorStore(settings.vector_db_path)
+        graph_factory = AuditableGraphFactory(
+            llm=self._llm, tool_registry=tool_registry, settings=self._settings
+        )
+        graph = graph_factory.create_graph(state=state, db=db)
 
-    return {
-        "llm": llm,
-        "embedder": embedder,
-        "vector_store": vector_store,
-    }
+        # 执行并返回最终状态
+        final_state = graph.invoke(state)
 
+        iteration_count = final_state.get("iteration_count", 0)
+        used_docs_count = len(final_state.get("documents", []))
+        answer_length = len(final_state.get("final_answer", ""))
 
-def build_document_components(settings: Settings | None = None) -> DocumentComponents:
-    """构建文档处理相关组件（Chunker + Embedding + VectorStore）"""
-    settings = settings or get_settings()
+        logger.info(
+            f"[AgentRuntime] Agent 执行完成 | 迭代次数: {iteration_count} | "
+            f"使用文档片段数: {used_docs_count} | 回答长度: {answer_length}"
+        )
 
-    chunker = DocumentChunker(
-        chunk_size=settings.chunk_size,
-        chunk_overlap=settings.chunk_overlap,
-    )
-    embedder = TextEmbedder(settings.embedding_model)
-    vector_store = VectorStore(settings.vector_db_path)
-
-    return {
-        "chunker": chunker,
-        "embedder": embedder,
-        "vector_store": vector_store,
-    }
+        return final_state
