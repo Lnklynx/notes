@@ -1,5 +1,4 @@
 from pydantic_settings import BaseSettings
-from functools import lru_cache
 
 
 class Settings(BaseSettings):
@@ -40,13 +39,17 @@ class Settings(BaseSettings):
     # 数据库配置
     database_url: str = "postgresql://postgres:admin123@localhost:5432/notes"
 
+    # LangSmith (可选, 用于追踪和调试)
+    langchain_tracing_v2: str = "false"
+    langchain_api_key: str | None = None
+    langchain_project: str | None = None
+    langsmith_endpoint: str | None = None
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = False
 
 
-@lru_cache()
 def get_settings() -> Settings:
     return Settings()
-

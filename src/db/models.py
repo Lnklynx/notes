@@ -128,31 +128,3 @@ class Memory(SQLModelBase, table=True):
     memory_type: str = Field(max_length=50)  # preference / summary / fact / profile
     content: str
     score: float = Field(default=0.5)
-
-
-class ExecutionRecord(SQLModel, table=True):
-    """每次对话的执行链路记录，包含多个步骤"""
-
-    __tablename__ = "notes_execution_record"
-
-    record_uid: str = Field(
-        default_factory=lambda: uuid4().hex, primary_key=True, description="记录唯一ID"
-    )
-    conversation_uid: str = Field(
-        foreign_key="notes_conversation.conversation_uid",
-        index=True,
-        description="关联的对话ID",
-    )
-    node_name: str = Field(description="执行的节点名称 (e.g., 'think', 'search')")
-    iteration_count: int = Field(description="在当前对话中的迭代轮次")
-    status: str = Field(default="success", description="执行状态 ('success', 'error')")
-    execution_time_ms: int = Field(description="执行耗时（毫秒）")
-    llm_input: Optional[dict] = Field(default=None, sa_column=Column(JSONB))
-    llm_output: Optional[dict] = Field(default=None, sa_column=Column(JSONB))
-    tool_input: Optional[dict] = Field(default=None, sa_column=Column(JSONB))
-    tool_output: Optional[dict] = Field(default=None, sa_column=Column(JSONB))
-    error_info: Optional[dict] = Field(default=None, sa_column=Column(JSONB))
-
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc), description="创建时间"
-    )

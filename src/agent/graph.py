@@ -1,50 +1,44 @@
 from langgraph.graph import StateGraph, END
+
 from .state import AgentState
-from .nodes import think_node, search_node, synthesize_node, judge_node
+from .nodes import llm_node, tool_node
 from ..llm.base import BaseLLM
 from ..tools.base import ToolRegistry
 
 
-def create_agent_graph(
-        llm_think: BaseLLM,
-        llm_synthesize: BaseLLM,
-        tool_registry: ToolRegistry,
-        max_iterations: int = 10,
-):
-    """创建 ReAct Agent 图"""
+def should_continue(state: AgentState) -> str:
+    """判断是否继续执行工具"""
+    last_message = state['messages'][-1]
+    # 如果没有工具调用，则结束
+    if not last_message.tool_calls:
+        return "end"
+    # 否则，继续执行工具
+    return "continue"
+
+
+def create_agent_graph(llm: BaseLLM, tool_registry: ToolRegistry):
+    """创建 Agent 图"""
 
     graph = StateGraph(AgentState)
 
     # 注册节点
-    graph.add_node(
-        "think",
-        lambda state: think_node(state, llm_think, tool_registry),
-    )
-    graph.add_node(
-        "search",
-        lambda state: search_node(state, tool_registry),
-    )
-    graph.add_node(
-        "synthesize",
-        lambda state: synthesize_node(state, llm_synthesize),
-    )
-    graph.add_node("judge", lambda state: judge_node(state, max_iterations))
+    graph.add_node("agent", lambda state: llm_node(state, llm, tool_registry))
+    graph.add_node("action", lambda state: tool_node(state, tool_registry))
 
-    # 定义边（转移条件）
-    graph.set_entry_point("think")
+    # 定义边
+    graph.set_entry_point("agent")
 
+    # 条件边：根据 agent 的输出决定是调用工具还是结束
     graph.add_conditional_edges(
-        "think",
-        lambda state: "search" if state.get("next_action") == "search" else "synthesize"
+        "agent",
+        should_continue,
+        {
+            "continue": "action",
+            "end": END,
+        },
     )
 
-    graph.add_edge("search", "judge")
-
-    graph.add_conditional_edges(
-        "judge",
-        lambda state: "think" if state.get("next_action") == "search" else "synthesize"
-    )
-
-    graph.add_edge("synthesize", END)
+    # 从 action 返回到 agent
+    graph.add_edge("action", "agent")
 
     return graph

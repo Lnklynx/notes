@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 from typing import Iterator
 import logging
 
@@ -38,9 +37,8 @@ def init_db() -> None:
     SQLModel.metadata.create_all(engine)
 
 
-@contextmanager
 def get_session() -> Iterator[Session]:
-    """提供数据库会话上下文管理"""
+    """FastAPI 依赖使用的数据库会话生成器"""
     engine = get_engine()
     session = Session(engine)
     try:

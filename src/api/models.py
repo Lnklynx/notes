@@ -10,11 +10,10 @@ class DocumentUploadRequest(BaseModel):
 
 
 class DocumentResponse(BaseModel):
-    """文档响应"""
-    document_id: str
+    """文档创建结果"""
+    document_uid: str
     name: str
     chunks_count: int
-    message: str
 
 
 class ChatRequest(BaseModel):

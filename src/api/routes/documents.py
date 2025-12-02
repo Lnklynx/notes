@@ -1,65 +1,40 @@
-from typing import List
-
 from fastapi import APIRouter, Depends
 
-from ..dependencies import DocumentComponents, build_document_components
-from ..models import (
-    DocumentResponse,
-    DocumentUploadRequest,
-)
+from ..models import DocumentUploadRequest, DocumentResponse
 from ..responses import StandardResponse, success_response
-from ...db.session import get_session
-from ...services.document_service import (
-    create_document_with_chunks,
-    list_documents_for_api,
-)
+from ...services.document_service import DocumentService
+from ..dependencies import get_document_service
 
-router = APIRouter(prefix="/documents", tags=["documents"])
+router = APIRouter()
 
 
-def get_document_services() -> DocumentComponents:
-    """依赖注入：获取文档处理服务"""
-    components = build_document_components()
-    return components
-
-
-@router.post(
-    "/upload",
-    response_model=StandardResponse[DocumentResponse],
-    summary="上传并处理文档",
-)
-async def upload_document(
-        req: DocumentUploadRequest,
-        services: DocumentComponents = Depends(get_document_services),
-) -> StandardResponse:
-    """上传文档，对其进行分块、向量化并存储"""
-    with get_session() as db:
-        doc, chunk_count = create_document_with_chunks(
-            db=db,
-            name=req.name,
-            source_type=req.source_type,
-            source_content=req.content,
-            chunker=services["chunker"],
-            embedder=services["embedder"],
-            vector_store=services["vector_store"],
-        )
-
-    response_data = DocumentResponse(
-        document_id=doc.document_uid,
-        name=req.name,
-        chunks_count=chunk_count,
-        message="Document uploaded and processed successfully",
+@router.post("/documents",
+             response_model=StandardResponse[DocumentResponse],
+             )
+def create_document(
+        doc_in: DocumentUploadRequest,
+        service: DocumentService = Depends(get_document_service),
+):
+    """创建文档，并异步进行分块、向量化和存储"""
+    doc, chunks_count = service.create_document_with_chunks(
+        name=doc_in.name,
+        source_type=doc_in.source_type,
+        source_content=doc_in.source_content,
     )
-    return success_response(data=response_data)
+    return success_response(
+        data=DocumentResponse(
+            document_uid=doc.document_uid,
+            name=doc.name,
+            chunks_count=chunks_count,
+        )
+    )
 
 
 @router.get(
-    "/list",
-    response_model=StandardResponse[List[dict]],
-    summary="列出所有文档",
+    "/documents",
+    response_model=StandardResponse[list[dict]],
 )
-async def list_documents() -> StandardResponse:
-    """获取系统中所有已处理的文档列表"""
-    with get_session() as db:
-        items = list_documents_for_api(db)
-        return success_response(data=items)
+def list_documents(service: DocumentService = Depends(get_document_service)):
+    """获取文档列表"""
+    docs = service.list_documents_for_api()
+    return success_response(data=docs)

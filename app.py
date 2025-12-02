@@ -1,4 +1,6 @@
 import logging
+import os
+
 import uvicorn
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
@@ -16,6 +18,17 @@ from src.utils.logger import configure_sqlalchemy_logging, setup_logger
 # 在应用模块级别获取一次 settings
 settings = get_settings()
 
+
+def _init_langsmith_from_settings() -> None:
+    """根据应用配置初始化 LangSmith / LangChain 相关环境变量。"""
+    if settings.langchain_tracing_v2.lower() == "true":
+        os.environ["LANGCHAIN_TRACING_V2"] = "true"
+        if settings.langchain_api_key:
+            os.environ.setdefault("LANGSMITH_API_KEY", settings.langchain_api_key)
+        if settings.langchain_project:
+            os.environ.setdefault("LANGCHAIN_PROJECT", settings.langchain_project)
+
+
 # 应用启动时配置日志系统
 setup_logger("notes", level=logging.INFO if settings.debug else logging.WARNING)
 if settings.debug:
@@ -30,6 +43,7 @@ async def lifespan(app: FastAPI):
     logging.info("Application startup...")
     # 开发阶段：应用启动时自动创建缺失的数据表
     init_db()
+    _init_langsmith_from_settings()
     yield
     # 应用关闭时执行
     logging.info("Application shutdown...")
