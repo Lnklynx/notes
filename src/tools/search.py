@@ -23,9 +23,10 @@ class VectorSearchTool(Tool):
                 "description": "Number of top documents to retrieve (default: 5)",
                 "default": 5
             },
-            "document_uid": {
-                "type": "string",
-                "description": "Optional document identifier to filter results to a specific document"
+            "document_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional list of document identifiers to filter results. If not provided, searches across all documents."
             }
         },
         "required": ["query"]
@@ -36,30 +37,33 @@ class VectorSearchTool(Tool):
         self.embedder = embedder
 
     def execute(
-        self,
-        query: str | None = None,
-        top_k: int = 5,
-        document_uid: str | None = None,
+            self,
+            query: str | None = None,
+            top_k: int = 5,
+            document_ids: list[str] | None = None,
     ) -> dict:
         """执行检索，可选按文档过滤"""
         # 处理 query 缺失或空的情况
         query = query.strip() if query else ""
         has_query = bool(query)
-        
-        where = {"document_uid": document_uid} if document_uid else None
-        
-        logger.info(f"[VectorSearchTool] 开始检索 | query: {query[:100] if has_query else '(empty)'}... | top_k: {top_k} | document_uid: {document_uid}")
+
+        where = {}
+        if document_ids:
+            # 假设向量数据库支持 $in 操作
+            where = {"document_uid": {"$in": document_ids}}
+
+        logger.info(f"[VectorSearchTool] 开始检索 | query: {query[:100] if has_query else '(empty)'}... | top_k: {top_k} | document_ids: {document_ids}")
 
         # 如果 query 为空，使用元数据查询而不是向量检索
         if not has_query:
             if not where:
-                logger.warning("[VectorSearchTool] query 为空且未指定 document_uid，无法进行查询")
+                logger.warning("[VectorSearchTool] query 为空且未指定 document_ids，无法进行查询")
                 return {
                     "documents": [[]],
                     "distances": [[]],
                     "metadatas": [[]],
                 }
-            
+
             logger.info(f"[VectorSearchTool] query 为空，使用元数据查询 | where: {where}")
             results = self.vector_store.search_by_metadata(
                 top_k=top_k,
@@ -72,7 +76,7 @@ class VectorSearchTool(Tool):
 
             if where:
                 logger.info(f"[VectorSearchTool] 使用文档过滤: {where}")
-            
+
             results = self.vector_store.search(
                 query_embedding, top_k=top_k, where=where
             )
@@ -80,7 +84,7 @@ class VectorSearchTool(Tool):
         doc_list = results.get("documents", [[]])
         doc_count = len(doc_list[0]) if doc_list and doc_list[0] else 0
         distances = results.get("distances", [[]])
-        
+
         logger.info(f"[VectorSearchTool] 检索结果 | 返回 {doc_count} 个文档片段")
         if doc_count > 0 and distances and distances[0]:
             logger.debug(f"[VectorSearchTool] 相似度范围: {min(distances[0]):.4f} ~ {max(distances[0]):.4f}")

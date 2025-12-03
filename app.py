@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from src.api.responses import error_response
-from src.api.routes import chat, documents, health
+from src.api.routes import chat_router, documents_router, vector_store_router
 from src.config import get_settings
 from src.common.error_codes import get_http_status
 from src.common.exceptions import BaseAppException
@@ -70,9 +70,9 @@ def create_app() -> FastAPI:
     )
 
     # 注册路由
-    app.include_router(health.router)
-    app.include_router(documents.router, prefix="/api")
-    app.include_router(chat.router, prefix="/api")
+    app.include_router(documents_router.router, prefix="/api")
+    app.include_router(chat_router.router, prefix="/api")
+    app.include_router(vector_store_router.router, prefix="/api")
 
     # 注册全局异常处理器 for 自定义业务异常
     @app.exception_handler(BaseAppException)
@@ -96,10 +96,7 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def generic_exception_handler(request: Request, exc: Exception):
         # 记录严重的服务器内部错误
-        logging.error(
-            f"An unhandled exception occurred: {exc}",
-            exc_info=True,
-        )
+        logging.error(f"An unhandled exception occurred: {exc}", exc_info=True, )
         response_content = error_response(
             code=90300,  # INTERNAL_SERVER_ERROR
             message="Internal Server Error",

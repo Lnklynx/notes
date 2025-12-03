@@ -25,9 +25,11 @@ class QwenLLM(BaseLLM):
         try:
             from dashscope import Generation
 
+            formatted_messages = self._format_messages(request.messages)
+
             kwargs = {
                 "model": self.model,
-                "messages": request.messages,
+                "messages": formatted_messages,
                 "temperature": request.temperature,
                 "stream": False
             }
@@ -74,9 +76,11 @@ class QwenLLM(BaseLLM):
         try:
             from dashscope import Generation
 
+            formatted_messages = self._format_messages(request.messages)
+
             kwargs = {
                 "model": self.model,
-                "messages": request.messages,
+                "messages": formatted_messages,
                 "temperature": request.temperature,
                 "stream": True
             }
@@ -101,3 +105,109 @@ class QwenLLM(BaseLLM):
                     raise RuntimeError(f"Qwen streaming error: {response.message}")
         except Exception as e:
             raise RuntimeError(f"Qwen streaming error: {str(e)}")
+
+    @staticmethod
+    def _format_messages(messages: list) -> list[dict]:
+        """转换消息格式，兼容 LangChain BaseMessage 对象
+        
+        将 LangChain 消息对象转换为 dashscope API 期望的字典格式。
+        支持 HumanMessage, AIMessage, SystemMessage, ToolMessage。
+        
+        注意：dashscope API 要求 ToolMessage 必须紧跟在包含 tool_calls 的 AIMessage 之后。
+        """
+        formatted = []
+        prev_assistant_has_tool_calls = False
+        
+        for i, msg in enumerate(messages):
+            if isinstance(msg, dict):
+                # 已经是字典格式
+                role = msg.get("role")
+                
+                if role == "tool":
+                    # ToolMessage 必须紧跟在包含 tool_calls 的 AIMessage 之后
+                    if not prev_assistant_has_tool_calls:
+                        # 跳过这个 ToolMessage，因为前面没有包含 tool_calls 的 assistant 消息
+                        continue
+                    formatted.append(msg)
+                    prev_assistant_has_tool_calls = False
+                else:
+                    formatted.append(msg)
+                    # 检查是否是包含 tool_calls 的 assistant 消息
+                    if role == "assistant" and "tool_calls" in msg:
+                        prev_assistant_has_tool_calls = True
+                    else:
+                        prev_assistant_has_tool_calls = False
+            elif hasattr(msg, "__class__"):
+                # LangChain BaseMessage 对象
+                class_name = msg.__class__.__name__
+
+                if class_name == "HumanMessage":
+                    formatted.append({
+                        "role": "user",
+                        "content": msg.content
+                    })
+                    prev_assistant_has_tool_calls = False
+                elif class_name == "AIMessage":
+                    msg_dict = {
+                        "role": "assistant",
+                        "content": msg.content or ""
+                    }
+                    # 处理工具调用
+                    if hasattr(msg, "tool_calls") and msg.tool_calls:
+                        tool_calls = []
+                        for tc in msg.tool_calls:
+                            # 兼容字典格式和对象格式的 tool_calls
+                            if isinstance(tc, dict):
+                                tool_call = {
+                                    "id": tc.get("id", f"call_{tc.get('name', 'unknown')}"),
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc.get("name", ""),
+                                        "arguments": json.dumps(tc.get("args", {})) if isinstance(tc.get("args"), dict) else str(tc.get("args", ""))
+                                    }
+                                }
+                            else:
+                                tool_call = {
+                                    "id": getattr(tc, "id", f"call_{getattr(tc, 'name', 'unknown')}"),
+                                    "type": "function",
+                                    "function": {
+                                        "name": getattr(tc, "name", ""),
+                                        "arguments": json.dumps(getattr(tc, "arguments", getattr(tc, "args", {}))) if isinstance(
+                                            getattr(tc, "arguments", getattr(tc, "args", {})), dict) else str(getattr(tc, "arguments", getattr(tc, "args", "")))
+                                    }
+                                }
+                            tool_calls.append(tool_call)
+                        msg_dict["tool_calls"] = tool_calls
+                        prev_assistant_has_tool_calls = True
+                    else:
+                        prev_assistant_has_tool_calls = False
+                    formatted.append(msg_dict)
+                elif class_name == "SystemMessage":
+                    formatted.append({
+                        "role": "system",
+                        "content": msg.content
+                    })
+                    # SystemMessage 不会重置 prev_assistant_has_tool_calls，因为它可以在任何位置
+                elif class_name == "ToolMessage":
+                    # ToolMessage 必须紧跟在包含 tool_calls 的 AIMessage 之后
+                    # 如果前一条消息不是包含 tool_calls 的 assistant，则跳过此 ToolMessage
+                    if not prev_assistant_has_tool_calls:
+                        # 跳过这个 ToolMessage，因为前面没有包含 tool_calls 的 assistant 消息
+                        continue
+                    
+                    tool_call_id = getattr(msg, "tool_call_id", "")
+                    formatted.append({
+                        "role": "tool",
+                        "content": msg.content,
+                        "tool_call_id": tool_call_id
+                    })
+                    # ToolMessage 后，重置标志（下一个 ToolMessage 需要新的 assistant 消息）
+                    prev_assistant_has_tool_calls = False
+                else:
+                    # 未知类型，默认作为 user 消息
+                    formatted.append({
+                        "role": "user",
+                        "content": str(msg.content) if hasattr(msg, "content") else str(msg)
+                    })
+                    prev_assistant_has_tool_calls = False
+        return formatted

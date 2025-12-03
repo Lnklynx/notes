@@ -85,6 +85,72 @@ class DocumentService:
 
         return doc, len(chunks)
 
+    def delete_document_by_uid(self, document_uid: str) -> bool:
+        """根据 document_uid 删除文档、分块及向量"""
+
+        # 1. 查找文档
+        doc = self.db.exec(
+            select(Document).where(
+                Document.document_uid == document_uid,
+                Document.is_deleted == False  # noqa: E712
+            )
+        ).first()
+
+        if not doc:
+            return False
+
+        # 2. 删除向量库中该文档的所有 chunks（物理删除，向量库不支持逻辑删除）
+        self.vector_store.delete_by_document_uid(document_uid)
+
+        # 3. 逻辑删除数据库中该文档的所有 chunks
+        chunks_to_delete = self.db.exec(
+            select(DocumentChunk).where(
+                DocumentChunk.document_id == doc.id,
+                DocumentChunk.is_deleted == False  # noqa: E712
+            )
+        ).all()
+        for chunk in chunks_to_delete:
+            chunk.is_deleted = True
+            self.db.add(chunk)
+
+        # 4. 逻辑删除文档记录
+        doc.is_deleted = True
+        self.db.add(doc)
+        self.db.commit()
+
+        return True
+
+    def batch_delete_documents(self, document_uids: list[str]) -> dict:
+        """批量删除文档、分块及向量
+        
+        Returns:
+            dict: 包含 success_count, failed_count, failed_uids 的字典
+        """
+        success_count = 0
+        failed_uids = []
+
+        for document_uid in document_uids:
+            try:
+                # 每个文档的删除操作是独立的，如果失败不影响其他文档
+                deleted = self.delete_document_by_uid(document_uid)
+                if deleted:
+                    success_count += 1
+                else:
+                    failed_uids.append(document_uid)
+            except Exception as e:
+                # 如果删除过程中出现异常，回滚当前事务并记录失败的文档
+                failed_uids.append(document_uid)
+                try:
+                    self.db.rollback()
+                except Exception:
+                    # 如果回滚也失败，忽略（可能事务已经提交或不存在）
+                    pass
+        return {
+            "success_count": success_count,
+            "failed_count": len(failed_uids),
+            "failed_uids": failed_uids,
+        }
+
     def list_documents_for_api(self) -> list[dict]:
         """列出文档信息，供 API 使用"""
 

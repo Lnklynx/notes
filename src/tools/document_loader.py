@@ -1,5 +1,6 @@
-import httpx
 from pathlib import Path
+
+from ..lib.web_fetcher import BrowserLikeFetcher
 
 
 class DocumentLoader:
@@ -9,12 +10,12 @@ class DocumentLoader:
     def load_from_url(url: str) -> str:
         """从 URL 加载网页内容"""
         try:
-            response = httpx.get(url, timeout=30.0)
-            response.raise_for_status()
+            # 使用浏览器模拟抓取工具获取 HTML
+            html = BrowserLikeFetcher.fetch(url)
 
             # 简单的 HTML 文本提取
             from bs4 import BeautifulSoup
-            soup = BeautifulSoup(response.text, "html.parser")
+            soup = BeautifulSoup(html, "html.parser")
             text = soup.get_text(separator="\n", strip=True)
             return text
         except Exception as e:

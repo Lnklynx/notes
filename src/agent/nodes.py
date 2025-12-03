@@ -45,6 +45,7 @@ def llm_node(state: AgentState, llm: BaseLLM, tool_registry: ToolRegistry, tempe
         ai_message_kwargs["tool_calls"] = langchain_tool_calls
     ai_message = AIMessage(**ai_message_kwargs)
 
+    # LLM产生的message会被LangGraph自动添加到state["messages"]中，并在ChatApplicationService中持久化
     return {"messages": [ai_message]}
 
 
@@ -100,6 +101,6 @@ def tool_node(state: AgentState, tool_registry: ToolRegistry) -> dict:
                 tool_call_id=call_id,
             )
         )
-
-    # 将工具结果追加到消息列表中
+    # 工具产生的message会被LangGraph自动添加到state["messages"]中，并在ChatApplicationService中持久化
+    # 注意：results 已经是列表，直接返回，LangGraph 会自动追加到现有消息列表
     return {"messages": results}
